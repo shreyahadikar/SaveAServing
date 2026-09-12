@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 import streamlit as st
 from datetime import datetime
-API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+API_URL = os.getenv("API_URL", "https://saveaserving.onrender.com")
 st.set_page_config(
     page_title="ChefEngine | AI Restaurant Operations",
     page_icon="🍳",
