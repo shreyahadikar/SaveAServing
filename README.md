@@ -4,7 +4,7 @@ An intelligent restaurant operations platform that combines **machine learning d
 
 ---
 
-## 🎯 Project Overview
+##  Project Overview
 
 Restaurant operations often face a difficult balancing act:
 
@@ -19,9 +19,9 @@ The platform provides restaurant managers and kitchen staff with an intelligent 
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
-### 📊 Newsvendor Model Integration
+###  Newsvendor Model Integration
 
 The system integrates the classical **Newsvendor Model** to mathematically optimize preparation quantities.
 
@@ -127,6 +127,6 @@ These safeguards add an operational layer on top of the forecasting and optimiza
                     │   Inventory Safeguards  │
                     │                         │
                     │ • Stock Limits          │
-                    │ • Shortage Alerts        │
-                    │ • Preparation Controls   │
+                    │ • Shortage Alerts       │
+                    │ • Preparation Controls  │
                     └─────────────────────────┘
