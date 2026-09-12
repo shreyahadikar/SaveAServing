@@ -4,3 +4,4 @@ scikit-learn
 scipy
 fastapi
 uvicorn
+groq

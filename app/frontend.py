@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 import streamlit as st
 from datetime import datetime
-
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 st.set_page_config(
     page_title="ChefEngine | AI Restaurant Operations",
     page_icon="🍳",
@@ -82,9 +82,7 @@ def get_image_base64(path):
             return base64.b64encode(img_file.read()).decode()
     return ""
 
-banner_image_path = "image_652b62.jpg"
-img_base64 = get_image_base64(banner_image_path)
-bg_css_url = f"data:image/jpeg;base64,{img_base64}" if img_base64 else "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=80"
+bg_css_url = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=80"
 
 # --- VIBRANT WARM CULINARY PRODUCTION THEME CSS WITH ENLARGED HERO BANNER ---
 st.markdown(f"""
@@ -274,7 +272,7 @@ if not st.session_state.show_copilot:
         }
         
         try:
-            res = requests.post("http://127.0.0.1:8000/predict-and-optimize", json=payload)
+            res = requests.post(f"{API_URL}/predict-and-optimize", json=payload)
             
             if res.status_code == 200:
                 data = res.json()
@@ -423,7 +421,7 @@ else:
             "available_stock": available_stock
         }
         try:
-            res = requests.post("http://127.0.0.1:8000/copilot/query", json=payload)
+            res = requests.post(f"{API_URL}/copilot/query", json=payload)
             if res.status_code == 200:
                 ans = res.json()
                 response_text = ans.get('response') or ans.get('answer') or ans.get('result')
