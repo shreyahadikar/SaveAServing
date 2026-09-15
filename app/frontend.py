@@ -1,9 +1,12 @@
 import os
 import base64
 import requests
+import re
 import pandas as pd
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import holidays
 API_URL = os.getenv("API_URL", "https://saveaserving.onrender.com")
 st.set_page_config(
     page_title="ChefEngine | AI Restaurant Operations",
@@ -57,23 +60,60 @@ def load_item_catalog():
 
 ITEM_CATALOG = load_item_catalog()
 
-# --- FETCH LIVE WEATHER & TIME AUTOMATICALLY ---
-@st.cache_data(ttl=600)
-def get_live_weather_and_time(lat=12.9716, lon=77.5946):
+# --- AUTOMATIC TOMORROW DATE, HOLIDAY & WEATHER DECISION ---
+IST = ZoneInfo("Asia/Kolkata")
+now_ist = datetime.now(IST)
+tomorrow = (now_ist + timedelta(days=1)).date()
+
+@st.cache_data(ttl=1800)
+def get_tomorrow_environment(target_date):
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,rain,is_day,weather_code"
-        res = requests.get(url, timeout=5)
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            "?latitude=12.9716&longitude=77.5946"
+            "&daily=temperature_2m_max,temperature_2m_min,rain_sum,weather_code"
+            "&timezone=Asia%2FKolkata&forecast_days=2"
+        )
+        res = requests.get(url, timeout=8)
         if res.status_code == 200:
-            data = res.json()["current"]
-            temp = float(data["temperature_2m"])
-            is_rainy = 1 if float(data["rain"]) > 0.0 else 0
-            is_night = 0 if int(data["is_day"]) == 1 else 1
-            return temp, is_rainy, is_night
+            data = res.json()["daily"]
+            dates = data["time"]
+            if str(target_date) in dates:
+                i = dates.index(str(target_date))
+            else:
+                i = 1
+
+            max_temp = float(data["temperature_2m_max"][i])
+            min_temp = float(data["temperature_2m_min"][i])
+            rain = float(data["rain_sum"][i] or 0)
+            code = int(data["weather_code"][i])
+
+            if code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99):
+                desc = "Rain likely"
+            elif max_temp >= 30:
+                desc = "Hot / clear"
+            else:
+                desc = "Pleasant"
+
+            return max_temp, min_temp, rain, code, desc
     except Exception:
         pass
-    return 24.0, 0, 0
 
-live_temp, live_rainy, live_night = get_live_weather_and_time()
+    return 24.0, 20.0, 0.0, 0, "Weather data unavailable"
+
+def is_karnataka_holiday(target_date):
+    try:
+        holiday_calendar = holidays.country_holidays(
+            "IN", subdiv="KA", years=target_date.year
+        )
+        return target_date in holiday_calendar, holiday_calendar.get(target_date)
+    except Exception:
+        return False, None
+
+tomorrow_max_temp, tomorrow_min_temp, tomorrow_rain, tomorrow_weather_code, tomorrow_weather_desc = (
+    get_tomorrow_environment(tomorrow)
+)
+tomorrow_is_holiday, holiday_name = is_karnataka_holiday(tomorrow)
 
 # --- HELPER TO CONVERT LOCAL IMAGE TO BASE64 ---
 def get_image_base64(path):
@@ -93,14 +133,14 @@ st.markdown(f"""
         color: #2d1810;
     }}
     
-    /* Enlarged Production Hero Banner with Blurred Background & Dark Gradient Overlay */
+    /* Compact Production Hero Banner with Blurred Background & Dark Gradient Overlay */
     .hero-banner {{
         position: relative;
         width: 100%;
-        min-height: 220px;
+        min-height: 130px;
         border-radius: 16px;
         overflow: hidden;
-        padding: 60px 40px;
+        padding: 28px 32px;
         margin-bottom: 24px;
         box-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
         display: flex;
@@ -196,6 +236,17 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
+# --- CLEAN AI COPILOT RESPONSE ---
+def clean_copilot_response(response_text):
+    if not response_text:
+        return ""
+    text = str(response_text).strip()
+    text = re.sub(r"```(?:markdown|md|text|python|json)?\\s*", "", text, flags=re.IGNORECASE)
+    text = text.replace("```", "")
+    text = re.sub(r"</?div[^>]*>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"</?span[^>]*>", "", text, flags=re.IGNORECASE)
+    return text.strip()
+
 # --- REFINED SIDEBAR WITH FOOD THUMBNAIL ---
 with st.sidebar:
     st.markdown("### 📋 Operations Control")
@@ -214,16 +265,32 @@ with st.sidebar:
     ingredient_cost = st.number_input("Ingredient Cost (₹)", value=item_defaults["cost"], step=5.0)
 
     st.markdown("---")
-    st.markdown("#### 🌦️ Live Environmental Telemetry")
-    weather_desc = "🌧️ Rainy & Wet" if live_rainy else ("☀️ Hot & Clear" if live_temp > 28 else "🌤️ Pleasant")
-    time_desc = "🌙 Night Service" if live_night else "☀️ Daytime Service"
-    st.info(f"**Temp:** {live_temp}°C\n\n**Condition:** {weather_desc}\n\n**Period:** {time_desc}")
+    st.markdown("#### 📅 Tomorrow's Decision Inputs")
+    st.info(
+        f"**Date:** {tomorrow.strftime('%d %b %Y')}\n\n"
+        f"**Day:** {tomorrow.strftime('%A')}"
+    )
+
+    if tomorrow_is_holiday:
+        st.success(f"🎉 **Holiday detected:** {holiday_name}")
+    else:
+        st.info("📌 **No Karnataka public holiday detected.**")
+
+    st.markdown("#### 🌦️ Tomorrow's Weather Forecast")
+    st.info(
+        f"**Temperature:** {tomorrow_min_temp:.1f}–{tomorrow_max_temp:.1f}°C\n\n"
+        f"**Condition:** {tomorrow_weather_desc}\n\n"
+        f"**Rain:** {tomorrow_rain:.1f} mm"
+    )
 
     st.markdown("---")
     available_stock = st.number_input("Current Stock (Portions)", value=item_defaults["stock"], step=5)
 
     st.markdown("---")
-    event_today = st.checkbox("Special Event / Holiday", value=True)
+    manual_event_override = st.checkbox(
+        "Treat tomorrow as Special Event / Holiday",
+        value=False
+    )
     promo_today = st.checkbox("Promotional Discount Active", value=False)
     override_demand = st.checkbox("Manual Demand Override")
 
@@ -236,8 +303,8 @@ st.markdown(f"""
 <div class="hero-banner">
     <div class="hero-content">
         <div>
-            <h1 style="margin: 0; font-size: 2.5rem; color: #ffffff; font-weight: 800; letter-spacing: -0.025em; text-shadow: 0 3px 12px rgba(0,0,0,0.7);">🍳 ChefEngine AI Ops</h1>
-            <p style="margin: 8px 0 0 0; color: #fed7aa; font-size: 1.2rem; font-weight: 600; text-shadow: 0 2px 8px rgba(0,0,0,0.7);">Dynamic Demand Forecasting & Newsvendor Inventory Suite</p>
+            <h1 style="margin: 0; font-size: 2rem; color: #ffffff; font-weight: 800; letter-spacing: -0.025em; text-shadow: 0 3px 12px rgba(0,0,0,0.7);">🍳 ChefEngine AI Ops</h1>
+            <p style="margin: 8px 0 0 0; color: #fed7aa; font-size: 1rem; font-weight: 600; text-shadow: 0 2px 8px rgba(0,0,0,0.7);">Dynamic Demand Forecasting & Newsvendor Inventory Suite</p>
         </div>
     </div>
 </div>
@@ -263,12 +330,12 @@ if not st.session_state.show_copilot:
             "ingredient_cost": ingredient_cost,
             "available_stock": available_stock,
             "predicted_demand": manual_demand if override_demand else None,
-            "day_of_week": datetime.now().weekday(),
-            "event": 1 if event_today else 0,
+            "day_of_week": tomorrow.weekday(),
+            "event": 1 if (tomorrow_is_holiday or manual_event_override) else 0,
             "promotion": 1 if promo_today else 0,
-            "temperature": live_temp,
-            "is_rainy": live_rainy,
-            "is_night": live_night
+            "temperature": tomorrow_max_temp,
+            "is_rainy": 1 if tomorrow_rain > 0 else 0,
+            "is_night": 0
         }
         
         try:
@@ -276,6 +343,7 @@ if not st.session_state.show_copilot:
             
             if res.status_code == 200:
                 data = res.json()
+                st.session_state.latest_forecast_demand = data["calculated_demand"]
                 opt = data["optimization_details"]
                 gross_profit = round(selling_price - ingredient_cost, 2)
                 gross_margin = round((gross_profit / selling_price) * 100, 1) if selling_price > 0 else 0.0
@@ -286,9 +354,9 @@ if not st.session_state.show_copilot:
                 with m1:
                     st.markdown(f"""
                     <div class="metric-card">
-                        <div class="metric-title">ML Forecast</div>
+                        <div class="metric-title">Tomorrow's ML Forecast</div>
                         <div class="metric-value">{data['calculated_demand']}</div>
-                        <small style="color:#9a3412;">Auto: {live_temp}°C | {weather_desc}</small>
+                        <small style="color:#9a3412;">Tomorrow: {tomorrow_max_temp:.1f}°C | {tomorrow_weather_desc}</small>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -417,7 +485,7 @@ else:
         payload = {
             "query": user_query,
             "item_name": selected_item,
-            "predicted_demand": item_defaults["base_demand"],
+            "predicted_demand":st.session_state.get("latest_forecast_demand", item_defaults["base_demand"]),
             "available_stock": available_stock
         }
         try:
@@ -425,6 +493,7 @@ else:
             if res.status_code == 200:
                 ans = res.json()
                 response_text = ans.get('response') or ans.get('answer') or ans.get('result')
+                response_text = clean_copilot_response(response_text)
                 if not response_text:
                     response_text = f"Analysis generated for {selected_item}. Baseline demand is {item_defaults['base_demand']} units."
 
